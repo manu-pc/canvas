@@ -3,6 +3,8 @@
 #include <GL/glu.h>
 #include <stdio.h>
 #include <math.h>
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
 
 // cámara:
 float angulo = 0.0f, beta = 0.0f, vel = 10.0f;
@@ -14,6 +16,40 @@ int ratonOrigenX, ratonOrigenY, ratonPulsado = 0;
 float velRaton = 0.5f;
 int modoDibujo = 0;
 int proyeccion = 0;
+
+GLuint listaCogaRecu, texturaCogaRecu;
+
+GLuint cargarTexturaPNG(const char *ruta)
+{
+    int ancho, alto, canales;
+    stbi_set_flip_vertically_on_load(1);
+    unsigned char *datos = stbi_load(ruta, &ancho, &alto, &canales, STBI_rgb_alpha);
+    
+    if (!datos)
+    {
+        printf("Error al cargar la imagen: %s\n", stbi_failure_reason());
+        return 0;
+    }
+
+    GLuint texID;
+    glGenTextures(1, &texID);
+    glBindTexture(GL_TEXTURE_2D, texID);
+
+    glTexImage2D(
+        GL_TEXTURE_2D, 0, GL_RGBA,
+        ancho, alto, 0,
+        GL_RGBA, GL_UNSIGNED_BYTE, datos);
+
+    // opciones de filtrado y wrapping
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+    stbi_image_free(datos);
+    return texID;
+}
+
 void reloj_triangle()
 {
     glPolygonMode(GL_FRONT, GL_LINE);
@@ -171,7 +207,149 @@ void reloj_fan()
 
     glLineWidth(1.0f);
 }
+float giroManillar = 0.0f;
+float giroRueda = 0.0f;
 
+void actualizarGiroRueda()
+{
+    giroRueda += 0.3f * 360 / 2 / PI;
+    if (giroRueda > 360)
+        giroRueda -= 360;
+    glutPostRedisplay();
+    glutTimerFunc(1000, actualizarGiroRueda, 0);
+}
+
+void dibujarMarco()
+{
+    glPushMatrix();
+    glScalef(1.0f, 0.5f, 0.5f);
+    glutSolidCube(1.0f);
+    glPopMatrix();
+}
+
+void dibujarRueda()
+{
+    glutWireSphere(0.5, 20, 20); // Draw a sphere as the wheel
+}
+
+void bicicleta()
+{
+    glColor3f(1.0, 0.0, 0.0);
+    glPushMatrix();
+    glScalef(1.2, 1.2, 1.2);
+    dibujarMarco();
+    glPopMatrix();
+
+    glColor3f(0.0, 0.0, 0.0);
+    glPushMatrix();
+    glTranslatef(0.6, 0, 0);
+    glRotatef(giroManillar, 0, 1, 0);
+    glRotatef(giroRueda, 0, 0, 1);
+    glScalef(0.6, 0.6, 0.6);
+    dibujarRueda();
+    glPopMatrix();
+
+    glPushMatrix();
+    glTranslatef(-0.6, 0, 0);
+    glRotatef(giroRueda, 0, 0, 1);
+    glScalef(0.6, 0.6, 0.6);
+    dibujarRueda();
+    glPopMatrix();
+
+    glutSwapBuffers();
+}
+
+void coga_recu()
+{
+    listaCogaRecu = glGenLists(1);
+    glNewList(listaCogaRecu, GL_COMPILE);
+        glPolygonMode(GL_FRONT, GL_FILL);
+
+    glBegin(GL_TRIANGLES);
+    // cara d-b-a (os colores non importan)
+    glColor3f(1, 0, 0);
+    glVertex3f(0, 0, 0);
+    glVertex3f(1, 0, 0);
+    glVertex3f(0, 0, 1);
+
+    // cara d-c-b
+    glColor3f(0, 1, 0);
+    glVertex3f(0, 0, 0);
+    glVertex3f(0, 1, 0);
+    glVertex3f(1, 0, 0);
+
+    // cara a-c-d
+    glColor3f(1, 0, 1);
+    glVertex3f(0, 0, 1);
+    glVertex3f(0, 1, 0);
+    glVertex3f(0, 0, 0);
+
+    // cara frontal c-a-b (en esta proyectamos la textura)
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, texturaCogaRecu);
+    glColor3f(0, 0, 1);
+
+    // las coordenadas u,v de la textura se calculan desde la esq. inf. izq.
+    // por ejemplo, este valor está justo encima del 10
+    glTexCoord2f(0.5f, 1.0f);
+    glVertex3f(0, 1, 0);
+
+    // 0.5 de v - mitad de la imagen (justo debajo del 10)
+    glTexCoord2f(0.0f, 0.5f);
+    glVertex3f(0, 0, 1);
+
+    glTexCoord2f(1.0f, 0.5f);
+    glVertex3f(1, 0, 0);
+    glDisable(GL_TEXTURE_2D);
+
+    glEnd();
+
+    glEndList();
+}
+
+void triangulos()
+{
+    GLfloat a[] = {-2, -2, 0};
+    GLfloat b[] = {1, -2, 0};
+    GLfloat c[] = {0, 0, 0};
+    GLfloat d[] = {3, 0, 0};
+    GLfloat e[] = {2, 4, 0};
+    glColor3f(0.0, 0.0, 1.0);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glLineWidth(2.0f);
+    glPolygonMode(GL_FRONT, GL_LINE);
+    glBegin(GL_TRIANGLES);
+    glVertex3fv(a);
+    glVertex3fv(b);
+    glVertex3fv(c);
+    glVertex3fv(d);
+    glVertex3fv(e);
+    glEnd();
+    glLineWidth(1.0f);
+}
+
+void triangulos_strip()
+{
+    GLfloat a[] = {-2, -2, 0};
+    GLfloat b[] = {1, -2, 0};
+    GLfloat c[] = {0, 0, 0};
+    GLfloat d[] = {3, 0, 0};
+    GLfloat e[] = {2, 4, 0};
+    glColor3f(0.0, 0.0, 1.0);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glLineWidth(2.0f);
+    glPolygonMode(GL_FRONT, GL_LINE);
+    glBegin(GL_TRIANGLE_STRIP);
+    glVertex3fv(a);
+    glVertex3fv(b);
+    glVertex3fv(c);
+    glVertex3fv(d);
+    glVertex3fv(e);
+    glEnd();
+    glLineWidth(1.0f);
+}
 void camera()
 {
 
@@ -182,8 +360,8 @@ void camera()
     float radY = beta * PI / 180.0f;
     float radX = angulo * PI / 180.0f;
 
-        camX = r * cos(beta * PI / 180.0f);
-        camZ = r * sin(beta * PI / 180.0f);
+    camX = r * cos(beta * PI / 180.0f);
+    camZ = r * sin(beta * PI / 180.0f);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
     gluLookAt(camX, camY, camZ, 0, 0, 0, 0, 1, 0);
@@ -293,26 +471,26 @@ void display()
     {
     case 0:
         reloj_triangle();
-        printf("dibujando reloj triangle\n");
+        // printf("dibujando reloj triangle\n");
         break;
     case 1:
         reloj_strip();
-        printf("dibujando reloj strip\n");
+        // printf("dibujando reloj strip\n");
         break;
 
     case 2:
         reloj_fan();
-        printf("dibujando reloj fan\n");
+        // printf("dibujando reloj fan\n");
         break;
     case 3:
-        printf("ejercicio segmentos (enunciado)\n");
+        // printf("ejercicio segmentos (enunciado)\n");
         segmento(2, 1, 4, 1, 'b');
         segmento(2, 1, 2, 5, 'g');
         break;
 
     case 4:
-        printf("ejercicio segmentos (resolto)\n");
-
+        // printf("ejercicio segmentos (resolto)\n");
+        //(probar aqui a meter transformacions para ver se funcionan)
         glPushMatrix();
         glTranslatef(2, 3, 0);
         glScalef(1, 2, 1);
@@ -331,11 +509,29 @@ void display()
         break;
 
     case 5:
-        printf(" ejercicio cubos\n");
+        // printf(" ejercicio cubos\n");
         dibujarCubos();
+        break;
+    case 6:
+        // printf("aviso: a bicicleta tira a un fps e eso pode joder as funciones de mover a camara\n");
+        bicicleta();
+        break;
+    case 7:
+        // printf("ejercicio triangulos (triangles)\n");
+        triangulos();
+        break;
+    case 8:
+        // printf("ejercicio triangulos (triangles strip)\n");
+        triangulos_strip();
+        break;
+    case 9:
+        // printf("figura do ej 1 de coga recu");
+        glCallList(listaCogaRecu);
         break;
     }
     glutSwapBuffers();
+    if (modoDibujo != 6)
+        glutPostRedisplay(); // a bicicleta tira a 1fps
 }
 
 void perspectiva(int w, int h)
@@ -484,7 +680,8 @@ void teclado(unsigned char tecla, int x, int y)
     case '7':
     case '8':
     case '9':
-        modoDibujo = tecla - '0' - 1;
+    case '0':
+        modoDibujo = (tecla - '0');
         break;
 
     // Zoom:
@@ -503,7 +700,7 @@ void teclado(unsigned char tecla, int x, int y)
         printf("Ángulo de la cámara: %.2f\n", angulo);
         printf("Beta de la cámara: %.2f\n", beta);
         printf("Velocidad de la cámara: %.2f\n", vel);
-        printf("FOV de la cámara: %.2f\n", fov);
+        printf("FOV de la cámara: %.2ff\n", fov);
         break;
     case 27: // ESC para saír
         exit(0);
@@ -535,10 +732,14 @@ int main(int argc, char **argv)
 
     glutCreateWindow("Test");
     openGLInit();
-
+    printf("cámara con raton/wasdqe, 1-9 para cambiar ejercicio, p para ortografica/perspectiva, +/- para zoom\n");
+    actualizarGiroRueda();
     glutReshapeFunc(perspectiva);
     glutKeyboardFunc(teclado);
+    coga_recu();
 
+    glEnable(GL_TEXTURE_2D);
+    texturaCogaRecu = cargarTexturaPNG("textura.png");
     glutDisplayFunc(display);
     glutMotionFunc(ratonMov);
     glutMouseFunc(ratonClick);
